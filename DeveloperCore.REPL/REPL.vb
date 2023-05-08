@@ -1,15 +1,15 @@
 ﻿Imports System.IO
+Imports DeveloperCore.REPL
 Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.Emit
 Imports Microsoft.CodeAnalysis.VisualBasic
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
-Imports Spectre.Console
 'TODO: Multiple statements
 Public Class REPL
     Private _imports As New List(Of ImportsStatementSyntax)
     Private _state As New Dictionary(Of String, Object)
 
-    Public Sub Evaluate(str As String)
+    Public Function Evaluate(str As String) As EvaluationResults
         Dim newStatement As StatementSyntax = SyntaxCreator.ParseStatement(str)
         Dim stateName As String = GetRandomString(10)
         Dim unit As CompilationUnitSyntax = SyntaxFactory.ParseCompilationUnit(GetUnit(newStatement, stateName).ToString)
@@ -18,24 +18,16 @@ Public Class REPL
         Dim comp As VisualBasicCompilation = CompilationCreator.GetCompilation(unit)
         Using ms As New MemoryStream
             Dim res As EmitResult = comp.Emit(ms)
+            Dim results As Object
             If res.Success Then
                 If TypeOf newStatement Is ImportsStatementSyntax Then
                     _imports.Add(newStatement)
                 End If
-                Run(ms)
+                results = Run(ms)
             End If
-            Dim diagnostics As IEnumerable(Of Diagnostic) = comp.GetDiagnostics.Where(Function(x) x.Severity <> DiagnosticSeverity.Hidden)
-            If diagnostics.Any Then
-                Dim t As New Table
-                t.AddColumn(New TableColumn("Code"))
-                t.AddColumn(New TableColumn("Description"))
-                For Each diag As Diagnostic In diagnostics
-                    t.AddRow($"[{GetColourFromSeverity(diag.Severity)}]{diag.Descriptor.Id}[/]", $"[{GetColourFromSeverity(diag.Severity)}]{diag.GetMessage}[/]")
-                Next
-                AnsiConsole.Write(t)
-            End If
+            Return New EvaluationResults(comp.GetDiagnostics.Where(Function(x) x.Severity <> DiagnosticSeverity.Hidden).ToArray, results)
         End Using
-    End Sub
+    End Function
 
     Private Function UpdateMethod(method As MethodBlockSyntax, stateName As String) As MethodBlockSyntax
         Dim stateVars As New List(Of VariableDeclaratorSyntax)
@@ -64,19 +56,16 @@ Public Class REPL
         Return If(obj Is Nothing, "Object", obj.GetType.FullName)
     End Function
 
-    Private Sub Run(ms As MemoryStream)
+    Private Function Run(ms As MemoryStream) As Object
         Dim asm As Reflection.Assembly = Reflection.Assembly.Load(ms.ToArray)
         Dim type As Type = asm.GetType("Expression")
         Dim obj As IExpression = Activator.CreateInstance(type)
         Try
-            Dim result As Object = obj.Evaluate(_state)
-            If result IsNot Nothing Then
-                AnsiConsole.WriteLine(result.ToString)
-            End If
+            Return obj.Evaluate(_state)
         Catch ex As Exception
-            AnsiConsole.WriteException(ex)
+            Return ex
         End Try
-    End Sub
+    End Function
 
     Private Function GetUnit(statement As StatementSyntax, param As String)
         Dim unit As CompilationUnitSyntax = SyntaxCreator.GetCompilationUnit(SyntaxCreator.GetModule.AddMembers(SyntaxCreator.GetMainMethod(param).AddStatements(If(TypeOf statement Is ImportsStatementSyntax, {}, {statement}).Concat({SyntaxFactory.ReturnStatement(SyntaxFactory.NothingLiteralExpression(SyntaxFactory.ParseToken("Nothing")))}).ToArray))).AddImports(_imports.Concat(If(TypeOf statement Is ImportsStatementSyntax, {DirectCast(statement, ImportsStatementSyntax)}, {})).ToArray).NormalizeWhitespace
@@ -84,26 +73,16 @@ Public Class REPL
     End Function
 
     Public Sub Reset()
+        _state.Clear()
         _imports.Clear()
     End Sub
 
-    Private Function GetColourFromSeverity(sev As DiagnosticSeverity) As String
-        Select Case sev
-            Case DiagnosticSeverity.Error
-                Return "red"
-            Case DiagnosticSeverity.Warning
-                Return "#67885c"
-            Case Else
-                Return "white"
-        End Select
-    End Function
-
-    Public Function GetRandomString(intLength As Integer) As String
+    Private Shared Function GetRandomString(intLength As Integer) As String
         Dim letters As String = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
         Dim numbers As String = "1234567890"
-        Dim rType As Random = New Random
-        Dim rLetter As Random = New Random
-        Dim rNumber As Random = New Random
+        Dim rType As New Random
+        Dim rLetter As New Random
+        Dim rNumber As New Random
         Dim result As String = String.Empty
         Dim c As Integer = 0
         While c < intLength
