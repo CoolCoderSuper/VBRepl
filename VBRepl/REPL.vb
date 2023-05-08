@@ -68,10 +68,14 @@ Public Class REPL
         Dim asm As Reflection.Assembly = Reflection.Assembly.Load(ms.ToArray)
         Dim type As Type = asm.GetType("Expression")
         Dim obj As IExpression = Activator.CreateInstance(type)
-        Dim result As Object = obj.Evaluate(_state)
-        If result IsNot Nothing Then
-            AnsiConsole.WriteLine(result.ToString)
-        End If
+        Try
+            Dim result As Object = obj.Evaluate(_state)
+            If result IsNot Nothing Then
+                AnsiConsole.WriteLine(result.ToString)
+            End If
+        Catch ex As Exception
+            AnsiConsole.WriteException(ex)
+        End Try
     End Sub
 
     Private Function GetUnit(statement As StatementSyntax, param As String)
