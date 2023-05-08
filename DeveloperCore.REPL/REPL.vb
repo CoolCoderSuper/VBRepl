@@ -1,4 +1,5 @@
 ﻿Imports System.IO
+Imports System.Runtime.InteropServices.ComTypes
 Imports DeveloperCore.REPL
 Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.Emit
@@ -8,14 +9,12 @@ Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
 Public Class REPL
     Private _imports As New List(Of ImportsStatementSyntax)
     Private _state As New Dictionary(Of String, Object)
+    Private _references As New List(Of MetadataReference)
+    Private _trees As New List(Of SyntaxTree)
 
     Public Function Evaluate(str As String) As EvaluationResults
         Dim newStatement As StatementSyntax = SyntaxCreator.ParseStatement(str)
-        Dim stateName As String = GetRandomString(10)
-        Dim unit As CompilationUnitSyntax = SyntaxFactory.ParseCompilationUnit(GetUnit(newStatement, stateName).ToString)
-        Dim method As MethodBlockSyntax = unit.DescendantNodes.OfType(Of MethodBlockSyntax).First
-        unit = unit.ReplaceNode(method, UpdateMethod(method, stateName)).NormalizeWhitespace
-        Dim comp As VisualBasicCompilation = CompilationCreator.GetCompilation(unit)
+        Dim comp As VisualBasicCompilation = GetCompilation(str)
         Using ms As New MemoryStream
             Dim res As EmitResult = comp.Emit(ms)
             Dim results As Object
@@ -27,6 +26,15 @@ Public Class REPL
             End If
             Return New EvaluationResults(comp.GetDiagnostics.Where(Function(x) x.Severity <> DiagnosticSeverity.Hidden).ToArray, results)
         End Using
+    End Function
+
+    Public Function GetCompilation(str As String) As VisualBasicCompilation
+        Dim newStatement As StatementSyntax = SyntaxCreator.ParseStatement(str)
+        Dim stateName As String = GetRandomString(10)
+        Dim unit As CompilationUnitSyntax = SyntaxFactory.ParseCompilationUnit(GetUnit(newStatement, stateName).ToString)
+        Dim method As MethodBlockSyntax = unit.DescendantNodes.OfType(Of MethodBlockSyntax).First
+        unit = unit.ReplaceNode(method, UpdateMethod(method, stateName)).NormalizeWhitespace
+        Return CompilationCreator.GetCompilation(unit).AddReferences(_references).AddSyntaxTrees(_trees)
     End Function
 
     Private Function UpdateMethod(method As MethodBlockSyntax, stateName As String) As MethodBlockSyntax
@@ -51,11 +59,6 @@ Public Class REPL
         Return method
     End Function
 
-    Private Function GetTypeName(key As String) As String
-        Dim obj As Object = _state(key)
-        Return If(obj Is Nothing, "Object", obj.GetType.FullName)
-    End Function
-
     Private Function Run(ms As MemoryStream) As Object
         Dim asm As Reflection.Assembly = Reflection.Assembly.Load(ms.ToArray)
         Dim type As Type = asm.GetType("Expression")
@@ -70,6 +73,11 @@ Public Class REPL
     Private Function GetUnit(statement As StatementSyntax, param As String)
         Dim unit As CompilationUnitSyntax = SyntaxCreator.GetCompilationUnit(SyntaxCreator.GetModule.AddMembers(SyntaxCreator.GetMainMethod(param).AddStatements(If(TypeOf statement Is ImportsStatementSyntax, {}, {statement}).Concat({SyntaxFactory.ReturnStatement(SyntaxFactory.NothingLiteralExpression(SyntaxFactory.ParseToken("Nothing")))}).ToArray))).AddImports(_imports.Concat(If(TypeOf statement Is ImportsStatementSyntax, {DirectCast(statement, ImportsStatementSyntax)}, {})).ToArray).NormalizeWhitespace
         Return unit
+    End Function
+
+    Private Function GetTypeName(key As String) As String
+        Dim obj As Object = _state(key)
+        Return If(obj Is Nothing, "Object", obj.GetType.FullName)
     End Function
 
     Public Sub Reset()
@@ -96,4 +104,33 @@ Public Class REPL
         Return result
     End Function
 
+    Public Sub AddReference(ref As String)
+        If IsValidPath(ref) AndAlso File.Exists(ref) Then
+            Select Case Path.GetExtension(ref)
+                Case ".dll", ".exe"
+                    _references.Add(MetadataReference.CreateFromFile(ref))
+                Case ".vbproj", ".csproj"
+                    'TODO: Project references
+                Case ".vb"
+                    _trees.Add(SyntaxFactory.ParseSyntaxTree(File.ReadAllText(ref)))
+            End Select
+        Else
+            'TODO: NuGet
+        End If
+    End Sub
+
+    Private Shared Function IsValidPath(path As String) As String
+        Dim fi As FileInfo = Nothing
+        Try
+            fi = New FileInfo(path)
+        Catch __unusedArgumentException1__ As ArgumentException
+        Catch __unusedPathTooLongException2__ As PathTooLongException
+        Catch __unusedNotSupportedException3__ As NotSupportedException
+        End Try
+        If ReferenceEquals(fi, Nothing) Then
+            Return False
+        Else
+            Return True
+        End If
+    End Function
 End Class

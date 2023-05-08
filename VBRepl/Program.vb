@@ -1,24 +1,34 @@
 Imports Microsoft.CodeAnalysis
 Imports Spectre.Console
 Imports DeveloperCore.REPL
-
+Imports System.Reflection
 Public Module Program
 
-    'TODO: Managing the compilation e.g references
     'TODO: Default imports
     Public Sub Main(args As String())
+        Console.Title = "VB REPL"
+        Console.WriteLine("VB REPL by CoolCoderSuper")
+        Console.WriteLine("Roslyn version: " & GetType(VisualBasic.VisualBasicCompilation).Assembly.GetCustomAttribute(Of AssemblyFileVersionAttribute).Version)
+        Console.WriteLine("Type '#exit' to exit, '#clear' to clear the console and '#reset' to reset the REPL")
         Dim prompt As New PrettyPrompt.Prompt
         Dim repl As New REPL
         While True
             Dim res As PrettyPrompt.PromptResult = prompt.ReadLineAsync().Result
             If res.IsSuccess Then
-                If res.Text.ToLower() = "exit" Then
+                If res.Text.ToLower() = "#exit" Then
                     Exit While
-                ElseIf res.Text.ToLower() = "clear" Then
+                ElseIf res.Text.ToLower() = "#clear" Then
                     Console.Clear()
                     Continue While
-                ElseIf res.Text.ToLower() = "reset" Then
+                ElseIf res.Text.ToLower() = "#reset" Then
                     repl.Reset()
+                    Continue While
+                ElseIf res.Text.ToLower().StartsWith("#r") Then
+                    Dim ref As String = res.Text.Substring(2).Trim
+                    If ref.StartsWith("""") AndAlso ref.EndsWith("""") Then
+                        ref = ref.Substring(1, ref.Length - 2)
+                    End If
+                    repl.AddReference(ref)
                     Continue While
                 End If
                 Dim r As EvaluationResults = repl.Evaluate(res.Text)
