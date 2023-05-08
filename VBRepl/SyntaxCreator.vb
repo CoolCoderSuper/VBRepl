@@ -9,7 +9,7 @@ Public Class SyntaxCreator
     End Function
 
     Public Shared Function GetMainMethod() As MethodBlockSyntax
-        Return SyntaxFactory.FunctionBlock(SyntaxFactory.FunctionStatement("Evaluate").AddImplementsClauseInterfaceMembers(SyntaxFactory.QualifiedName(SyntaxFactory.ParseTypeName("VBRepl.IExpression"), SyntaxFactory.ParseName("Evaluate"))).AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.ModifiedIdentifier("state")).WithAsClause(SyntaxFactory.SimpleAsClause(SyntaxFactory.ParseTypeName("VBRepl.AdvancedDictionary(Of String, Object)")))))
+        Return SyntaxFactory.FunctionBlock(SyntaxFactory.FunctionStatement("Evaluate").AddImplementsClauseInterfaceMembers(SyntaxFactory.QualifiedName(SyntaxFactory.ParseTypeName("VBRepl.IExpression"), SyntaxFactory.ParseName("Evaluate"))).AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.ModifiedIdentifier("state")).WithAsClause(SyntaxFactory.SimpleAsClause(SyntaxFactory.ParseTypeName("System.Collections.Generic.Dictionary(Of String, Object)")))))
     End Function
 
     Public Shared Function ParseStatement(str As String) As StatementSyntax

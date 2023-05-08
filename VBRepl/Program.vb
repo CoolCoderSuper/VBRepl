@@ -1,7 +1,5 @@
-Friend Module Program
+Public Module Program
 
-    'TODO: Expressions
-    'TODO: State
     'TODO: Managing the compilation e.g references
     Public Sub Main(args As String())
         Dim prompt As New PrettyPrompt.Prompt

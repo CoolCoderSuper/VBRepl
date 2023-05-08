@@ -1,3 +1,3 @@
 ﻿Public Interface IExpression
-    Function Evaluate(state As AdvancedDictionary(Of String, Object)) As Object
+    Function Evaluate(state As Dictionary(Of String, Object)) As Object
 End Interface
