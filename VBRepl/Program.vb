@@ -5,6 +5,7 @@ Imports System.Reflection
 Public Module Program
 
     'TODO: Default imports
+    'TODO: Config file
     Public Sub Main(args As String())
         Console.Title = "VB REPL"
         Console.WriteLine("VB REPL by CoolCoderSuper")
@@ -28,7 +29,11 @@ Public Module Program
                     If ref.StartsWith("""") AndAlso ref.EndsWith("""") Then
                         ref = ref.Substring(1, ref.Length - 2)
                     End If
-                    repl.AddReference(ref)
+                    Try
+                        repl.AddReference(ref).Wait()
+                    Catch ex As Exception
+                        AnsiConsole.WriteException(ex)
+                    End Try
                     Continue While
                 End If
                 Dim r As EvaluationResults = repl.Evaluate(res.Text)
