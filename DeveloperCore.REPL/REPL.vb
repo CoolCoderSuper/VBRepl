@@ -12,7 +12,8 @@ Imports NuGet.Packaging.Core
 Imports NuGet.ProjectManagement
 Imports NuGet.Protocol.Core.Types
 Imports NuGet.Resolver
-'TODO: Multiple statements
+'TODO: Child variables only
+'TODO: Non method things
 Public Class REPL
     Private _imports As New List(Of ImportsStatementSyntax)
     Private _state As New Dictionary(Of String, Object)
@@ -85,7 +86,26 @@ Public Class REPL
 
     Private Function GetTypeName(key As String) As String
         Dim obj As Object = _state(key)
-        Return If(obj Is Nothing, "Object", obj.GetType.FullName)
+        If obj Is Nothing Then
+            Return "Object"
+        Else
+            Dim type As Type = obj.GetType
+            Return GetTypeName(type)
+        End If
+    End Function
+
+    Public Function GetTypeName(type As Type) As String
+        If type.IsGenericType Then
+            Return SyntaxFactory.GenericName(GetGenericNameActual(type), SyntaxFactory.TypeArgumentList(New SeparatedSyntaxList(Of TypeSyntax)().AddRange(type.GenericTypeArguments.Select(Function(x) SyntaxFactory.ParseTypeName(GetTypeName(x)))))).NormalizeWhitespace.ToFullString
+        ElseIf type.IsArray Then
+            Return SyntaxFactory.ArrayType(SyntaxFactory.ParseTypeName(GetTypeName(type.GetElementType))).NormalizeWhitespace.ToFullString
+        Else
+            Return type.FullName
+        End If
+    End Function
+
+    Private Function GetGenericNameActual(type As Type) As String
+        Return $"{type.Namespace}.{type.Name.Remove(type.Name.IndexOf("`"))}"
     End Function
 
     Public Sub Reset()
