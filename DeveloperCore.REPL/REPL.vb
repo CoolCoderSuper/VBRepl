@@ -58,9 +58,9 @@ Public Class REPL
         For Each var As VariableDeclaratorSyntax In vars
             Dim name As String = var.Names.First.Identifier.Text
             If Not _state.ContainsKey(name) Then
-                varUpdates.Add(SyntaxFactory.ExpressionStatement(SyntaxFactory.ParseExpression($"{stateName}.Add(""{name}"", {name})")))
+                varUpdates.Add(SyntaxFactory.ParseExecutableStatement($"{stateName}.Add(""{name}"", {name})"))
             Else
-                varUpdates.Add(SyntaxFactory.ExpressionStatement(SyntaxFactory.ParseExpression($"{stateName}(""{name}"") = {name}")))
+                varUpdates.Add(SyntaxFactory.ParseExecutableStatement($"{stateName}(""{name}"") = {name}"))
             End If
         Next
         method = method.WithStatements(method.Statements.InsertRange(retIndex, varUpdates))
