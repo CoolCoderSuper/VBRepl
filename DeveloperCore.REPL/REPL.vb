@@ -13,7 +13,10 @@ Imports NuGet.ProjectManagement
 Imports NuGet.Protocol.Core.Types
 Imports NuGet.Resolver
 'TODO: Child variables only
+'TODO: Async
 'TODO: Non method things
+'TODO: Maybe replace variable references with dictionary lookups
+'TODO: State save should be inserted before all returns
 Public Class REPL
     Private _imports As New List(Of ImportsStatementSyntax)
     Private _state As New Dictionary(Of String, Object)
@@ -22,8 +25,8 @@ Public Class REPL
     Private ReadOnly _nugetCache As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DeveloperCore.REPL", "NuGetCache")
 
     Public Function Evaluate(str As String) As EvaluationResults
-        Dim newStatement As StatementSyntax = SyntaxCreator.ParseStatement(str)
-        Dim comp As VisualBasicCompilation = GetCompilation(str)
+        Dim newStatement As StatementSyntax = SyntaxFactory.ParseExecutableStatement(str)
+        Dim comp As VisualBasicCompilation = GetCompilation(newStatement)
         Using ms As New MemoryStream
             Dim res As EmitResult = comp.Emit(ms)
             Dim results As Object
@@ -37,34 +40,43 @@ Public Class REPL
         End Using
     End Function
 
-    Public Function GetCompilation(str As String) As VisualBasicCompilation
-        Dim newStatement As StatementSyntax = SyntaxCreator.ParseStatement(str)
+    Public Function GetCompilation(newStatement As StatementSyntax) As VisualBasicCompilation
         Dim stateName As String = GetRandomString(10)
-        Dim unit As CompilationUnitSyntax = SyntaxFactory.ParseCompilationUnit(GetUnit(newStatement, stateName).ToString)
-        Dim method As MethodBlockSyntax = unit.DescendantNodes.OfType(Of MethodBlockSyntax).First
-        unit = unit.ReplaceNode(method, UpdateMethod(method, stateName)).NormalizeWhitespace
+        Dim unit As CompilationUnitSyntax = SyntaxFactory.ParseCompilationUnit(GetCompilationUnit(newStatement).ToString)
+        Dim classNode As ClassBlockSyntax = unit.DescendantNodes.OfType(Of ClassBlockSyntax).First
+        unit = unit.ReplaceNode(classNode, classNode.AddMembers(GetMethod(stateName, newStatement))).NormalizeWhitespace
         Return CompilationCreator.GetCompilation(unit).AddReferences(_references).AddSyntaxTrees(_trees)
     End Function
 
-    Private Function UpdateMethod(method As MethodBlockSyntax, stateName As String) As MethodBlockSyntax
-        Dim stateVars As New List(Of VariableDeclaratorSyntax)
-        For Each key As String In _state.Keys
-            Dim var As VariableDeclaratorSyntax = SyntaxFactory.VariableDeclarator(SyntaxFactory.ModifiedIdentifier(key)).WithAsClause(SyntaxFactory.SimpleAsClause(SyntaxFactory.ParseTypeName(GetTypeName(key)))).WithInitializer(SyntaxFactory.EqualsValue(SyntaxFactory.ParseExpression($"{stateName}(""{key}"")")))
-            stateVars.Add(var)
-        Next
-        method = method.WithStatements(method.Statements.Insert(0, SyntaxFactory.LocalDeclarationStatement(New SyntaxTokenList().Add(SyntaxFactory.ParseToken("Dim")), New SeparatedSyntaxList(Of VariableDeclaratorSyntax)().AddRange(stateVars)))).NormalizeWhitespace
-        Dim retIndex As Integer = method.Statements.IndexOf(method.DescendantNodes.OfType(Of ReturnStatementSyntax).First)
-        Dim varUpdates As New List(Of StatementSyntax)
-        Dim vars As VariableDeclaratorSyntax() = method.DescendantNodes.OfType(Of VariableDeclaratorSyntax).ToArray
-        For Each var As VariableDeclaratorSyntax In vars
-            Dim name As String = var.Names.First.Identifier.Text
-            If Not _state.ContainsKey(name) Then
-                varUpdates.Add(SyntaxFactory.ParseExecutableStatement($"{stateName}.Add(""{name}"", {name})"))
-            Else
-                varUpdates.Add(SyntaxFactory.ParseExecutableStatement($"{stateName}(""{name}"") = {name}"))
-            End If
-        Next
-        method = method.WithStatements(method.Statements.InsertRange(retIndex, varUpdates))
+    Private Function GetCompilationUnit(statement As StatementSyntax) As CompilationUnitSyntax
+        Dim unit As CompilationUnitSyntax = SyntaxFactory.CompilationUnit().AddMembers(SyntaxCreator.GetModule()).AddImports(_imports.Concat(If(TypeOf statement Is ImportsStatementSyntax, {DirectCast(statement, ImportsStatementSyntax)}, {})).ToArray).NormalizeWhitespace
+        Return unit
+    End Function
+
+    Private Function GetMethod(stateName As String, statement As StatementSyntax) As MethodBlockSyntax
+        Dim method As MethodBlockSyntax = SyntaxCreator.GetMethod(stateName)
+        Dim defaultReturn As ReturnStatementSyntax = SyntaxFactory.ReturnStatement(SyntaxFactory.NothingLiteralExpression(SyntaxFactory.ParseToken("Nothing")))
+        If TypeOf statement Is ImportsStatementSyntax Then
+            method = method.AddStatements(defaultReturn)
+        Else
+            Dim stateVars As New List(Of VariableDeclaratorSyntax)
+            For Each key As String In _state.Keys
+                Dim var As VariableDeclaratorSyntax = SyntaxFactory.VariableDeclarator(SyntaxFactory.ModifiedIdentifier(key)).WithAsClause(SyntaxFactory.SimpleAsClause(SyntaxFactory.ParseTypeName(GetTypeName(key)))).WithInitializer(SyntaxFactory.EqualsValue(SyntaxFactory.ParseExpression($"{stateName}(""{key}"")")))
+                stateVars.Add(var)
+            Next
+            Dim varDeclaration As LocalDeclarationStatementSyntax = SyntaxFactory.LocalDeclarationStatement(New SyntaxTokenList().Add(SyntaxFactory.ParseToken("Dim")), New SeparatedSyntaxList(Of VariableDeclaratorSyntax)().AddRange(stateVars))
+            Dim varUpdates As New List(Of StatementSyntax)
+            Dim vars As VariableDeclaratorSyntax() = varDeclaration.Declarators.Concat(statement.DescendantNodes.OfType(Of VariableDeclaratorSyntax)).ToArray
+            For Each var As VariableDeclaratorSyntax In vars
+                Dim name As String = var.Names.First.Identifier.Text
+                If Not _state.ContainsKey(name) Then
+                    varUpdates.Add(SyntaxFactory.ParseExecutableStatement($"{stateName}.Add(""{name}"", {name})"))
+                Else
+                    varUpdates.Add(SyntaxFactory.ParseExecutableStatement($"{stateName}(""{name}"") = {name}"))
+                End If
+            Next
+            method = method.WithStatements(New SyntaxList(Of StatementSyntax)().AddRange({varDeclaration, statement}).AddRange(varUpdates).Add(defaultReturn))
+        End If
         Return method
     End Function
 
@@ -79,11 +91,6 @@ Public Class REPL
         End Try
     End Function
 
-    Private Function GetUnit(statement As StatementSyntax, param As String)
-        Dim unit As CompilationUnitSyntax = SyntaxCreator.GetCompilationUnit(SyntaxCreator.GetModule.AddMembers(SyntaxCreator.GetMainMethod(param).AddStatements(If(TypeOf statement Is ImportsStatementSyntax, {}, {statement}).Concat({SyntaxFactory.ReturnStatement(SyntaxFactory.NothingLiteralExpression(SyntaxFactory.ParseToken("Nothing")))}).ToArray))).AddImports(_imports.Concat(If(TypeOf statement Is ImportsStatementSyntax, {DirectCast(statement, ImportsStatementSyntax)}, {})).ToArray).NormalizeWhitespace
-        Return unit
-    End Function
-
     Private Function GetTypeName(key As String) As String
         Dim obj As Object = _state(key)
         If obj Is Nothing Then
@@ -94,7 +101,7 @@ Public Class REPL
         End If
     End Function
 
-    Public Function GetTypeName(type As Type) As String
+    Private Function GetTypeName(type As Type) As String
         If type.IsGenericType Then
             Return SyntaxFactory.GenericName(GetGenericNameActual(type), SyntaxFactory.TypeArgumentList(New SeparatedSyntaxList(Of TypeSyntax)().AddRange(type.GenericTypeArguments.Select(Function(x) SyntaxFactory.ParseTypeName(GetTypeName(x)))))).NormalizeWhitespace.ToFullString
         ElseIf type.IsArray Then
