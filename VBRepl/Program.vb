@@ -3,7 +3,6 @@ Imports Spectre.Console
 Imports DeveloperCore.REPL
 Imports System.Reflection
 Public Module Program
-
     'TODO: Default imports
     'TODO: Config file
     Public Sub Main(args As String())
@@ -30,13 +29,13 @@ Public Module Program
                         ref = ref.Substring(1, ref.Length - 2)
                     End If
                     Try
-                        repl.AddReference(ref).Wait()
+                        repl.AddReference(ref)
                     Catch ex As Exception
                         AnsiConsole.WriteException(ex)
                     End Try
                     Continue While
                 End If
-                Dim r As EvaluationResults = repl.Evaluate(res.Text)
+                Dim r As EvaluationResults = repl.Evaluate(res.Text).Result
                 If TypeOf r.Result Is Exception Then
                     AnsiConsole.WriteException(r.Result)
                 ElseIf r.Result IsNot Nothing Then

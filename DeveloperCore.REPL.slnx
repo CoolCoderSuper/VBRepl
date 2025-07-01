@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="DeveloperCore.REPL/DeveloperCore.REPL.vbproj" />
+  <Project Path="VBRepl/VBRepl.vbproj" />
+</Solution>
