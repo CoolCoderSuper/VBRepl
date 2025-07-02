@@ -3,7 +3,6 @@ Imports Microsoft.CodeAnalysis
 Imports Microsoft.CodeAnalysis.Emit
 Imports Microsoft.CodeAnalysis.VisualBasic
 Imports Microsoft.CodeAnalysis.VisualBasic.Syntax
-'TODO: Async - Can't parse Await with ParseExecutableStatement
 'TODO: Non method things
 'TODO: State save should be inserted before all returns
 Public Class REPL
@@ -11,10 +10,18 @@ Public Class REPL
     Private _state As New Dictionary(Of String, Object)
     Private _references As New List(Of MetadataReference)
     Private _trees As New List(Of SyntaxTree)
-    Private ReadOnly _nugetCache As String = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DeveloperCore.REPL", "NuGetCache")
+    Private Const Template As String = "Public Async Sub Test()
+    {0}
+    End Sub"
 
     Public Async Function Evaluate(str As String) As Task(Of EvaluationResults)
-        Dim newStatement As StatementSyntax = SyntaxFactory.ParseExecutableStatement(str)
+        Dim statements = SyntaxFactory.ParseCompilationUnit(String.Format(Template, str)).DescendantNodes.First.DescendantNodes.OfType(Of StatementSyntax).ToArray()
+        Dim newStatement As StatementSyntax = Nothing
+        If statements.Length >= 3 Then
+            newStatement = statements(1)
+        Else
+            newStatement = SyntaxFactory.ParseExecutableStatement(str)
+        End If
         Dim comp As VisualBasicCompilation = GetCompilation(newStatement)
         Using ms As New MemoryStream
             Dim res As EmitResult = comp.Emit(ms)
@@ -38,12 +45,12 @@ Public Class REPL
     End Function
 
     Private Function GetCompilationUnit(statement As StatementSyntax) As CompilationUnitSyntax
-        Dim unit As CompilationUnitSyntax = SyntaxFactory.CompilationUnit().AddMembers(SyntaxCreator.GetModule()).AddImports(_imports.Concat(If(TypeOf statement Is ImportsStatementSyntax, {DirectCast(statement, ImportsStatementSyntax)}, {})).ToArray).NormalizeWhitespace
+        Dim unit As CompilationUnitSyntax = SyntaxFactory.CompilationUnit().AddMembers(GetModule()).AddImports(_imports.Concat(If(TypeOf statement Is ImportsStatementSyntax, {DirectCast(statement, ImportsStatementSyntax)}, {})).ToArray).NormalizeWhitespace
         Return unit
     End Function
 
     Private Function GetMethod(stateName As String, statement As StatementSyntax) As MethodBlockSyntax
-        Dim method As MethodBlockSyntax = SyntaxCreator.GetMethod(stateName)
+        Dim method As MethodBlockSyntax = GetBaseMethod(stateName)
         Dim defaultReturn As ReturnStatementSyntax = SyntaxFactory.ReturnStatement(SyntaxFactory.NothingLiteralExpression(SyntaxFactory.ParseToken("Nothing")))
         Dim taskYield As ExpressionStatementSyntax = SyntaxFactory.ExpressionStatement(SyntaxFactory.AwaitExpression(SyntaxFactory.ParseExpression("System.Threading.Tasks.Task.Yield()")))
         If TypeOf statement Is ImportsStatementSyntax Then
@@ -65,9 +72,20 @@ Public Class REPL
                     varUpdates.Add(SyntaxFactory.ParseExecutableStatement($"{stateName}(""{name}"") = {name}"))
                 End If
             Next
-            method = method.WithStatements(New SyntaxList(Of StatementSyntax)().AddRange({varDeclaration, statement}).AddRange(varUpdates).Add(taskYield).Add(defaultReturn))
+            If stateVars.Count > 0 Then
+                method = method.AddStatements(varDeclaration)
+            End If
+            method = method.AddStatements(statement).AddStatements(varUpdates.ToArray).AddStatements(taskYield, defaultReturn)
         End If
         Return method
+    End Function
+
+    Private Function GetBaseMethod(param As String) As MethodBlockSyntax
+        Return SyntaxFactory.FunctionBlock(SyntaxFactory.FunctionStatement("Evaluate").AddModifiers(SyntaxFactory.Token(SyntaxKind.AsyncKeyword)).WithAsClause(SyntaxFactory.SimpleAsClause(SyntaxFactory.ParseTypeName("System.Threading.Tasks.Task(Of Object)"))).AddImplementsClauseInterfaceMembers(SyntaxFactory.QualifiedName(SyntaxFactory.ParseTypeName("DeveloperCore.REPL.IExpression"), SyntaxFactory.ParseName("Evaluate"))).AddParameterListParameters(SyntaxFactory.Parameter(SyntaxFactory.ModifiedIdentifier(param)).WithAsClause(SyntaxFactory.SimpleAsClause(SyntaxFactory.ParseTypeName("System.Collections.Generic.Dictionary(Of String, Object)")))))
+    End Function
+
+    Private Function GetModule() As ClassBlockSyntax
+        Return SyntaxFactory.ClassBlock(SyntaxFactory.ClassStatement(SyntaxFactory.ParseToken("Expression"))).AddImplements(SyntaxFactory.ImplementsStatement(SyntaxFactory.ParseTypeName("DeveloperCore.REPL.IExpression")))
     End Function
 
     Private Async Function Run(ms As MemoryStream) As Task(Of Object)
