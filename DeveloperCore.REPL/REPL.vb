@@ -19,8 +19,6 @@ Public Class REPL
         Dim newStatement As StatementSyntax = Nothing
         If statements.Length >= 3 Then
             newStatement = statements(1)
-        Else
-            newStatement = SyntaxFactory.ParseExecutableStatement(str)
         End If
         Dim comp As VisualBasicCompilation = GetCompilation(newStatement)
         Using ms As New MemoryStream
